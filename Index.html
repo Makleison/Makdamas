@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MAKDAMAS</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #222;
+      color: #fff;
+    }
+
+    h1 {
+      margin: 20px 0;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 60px);
+      grid-template-rows: repeat(8, 60px);
+      border: 4px solid #fff;
+    }
+
+    .cell {
+      width: 60px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .black {
+      background-color: #333;
+    }
+
+    .white {
+      background-color: #eee;
+    }
+
+    .piece {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .black-piece {
+      background-color: black;
+    }
+
+    .white-piece {
+      background-color: white;
+      border: 2px solid #000;
+    }
+
+    .highlight {
+      outline: 3px solid yellow;
+    }
+
+    select {
+      margin-bottom: 20px;
+      font-size: 16px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MAKDAMAS</h1>
+  <label>
+    Nível do Robô:
+    <select id="difficulty">
+      <option value="easy">Fácil</option>
+      <option value="medium">Médio (em breve)</option>
+      <option value="hard">Difícil (em breve)</option>
+    </select>
+  </label>
+  <div class="board" id="board"></div>
+
+  <script>
+    const board = document.getElementById("board");
+    const SIZE = 8;
+    let selected = null;
+    let currentPlayer = "black";
+    let pieces = [];
+
+    function createBoard() {
+      board.innerHTML = "";
+      pieces = [];
+
+      for (let row = 0; row < SIZE; row++) {
+        for (let col = 0; col < SIZE; col++) {
+          const cell = document.createElement("div");
+          cell.className = "cell " + ((row + col) % 2 === 0 ? "white" : "black");
+          cell.dataset.row = row;
+          cell.dataset.col = col;
+          board.appendChild(cell);
+
+          // Peças iniciais
+          if (cell.classList.contains("black")) {
+            if (row < 3) {
+              addPiece(cell, "white");
+            } else if (row > 4) {
+              addPiece(cell, "black");
+            }
+          }
+        }
+      }
+    }
+
+    function addPiece(cell, color) {
+      const piece = document.createElement("div");
+      piece.className = `piece ${color}-piece`;
+      piece.dataset.color = color;
+      cell.appendChild(piece);
+      pieces.push(piece);
+    }
+
+    function getCell(row, col) {
+      return document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+    }
+
+    function getPiece(row, col) {
+      const cell = getCell(row, col);
+      return cell && cell.firstChild && cell.firstChild.classList.contains("piece") ? cell.firstChild : null;
+    }
+
+    function isValidMove(fromRow, fromCol, toRow, toCol, playerColor) {
+      const targetCell = getCell(toRow, toCol);
+      if (!targetCell || targetCell.firstChild) return false;
+
+      const dir = playerColor === "black" ? -1 : 1;
+      const rowDiff = toRow - fromRow;
+      const colDiff = Math.abs(toCol - fromCol);
+
+      // Movimento simples
+      if (rowDiff === dir && colDiff === 1 && !anyCapturesAvailable(playerColor)) return true;
+
+      // Captura
+      if (rowDiff === 2 * dir && colDiff === 2) {
+        const middleRow = fromRow + dir;
+        const middleCol = (fromCol + toCol) / 2;
+        const middlePiece = getPiece(middleRow, middleCol);
+        return middlePiece && middlePiece.dataset.color !== playerColor;
+      }
+
+      return false;
+    }
+
+    function anyCapturesAvailable(playerColor) {
+      for (let piece of pieces) {
+        if (piece.dataset.color !== playerColor) continue;
+        const cell = piece.parentElement;
+        const row = +cell.dataset.row;
+        const col = +cell.dataset.col;
+        const dir = playerColor === "black" ? -1 : 1;
+
+        for (let dc of [-2, 2]) {
+          const toRow = row + 2 * dir;
+          const toCol = col + dc;
+          const middleRow = row + dir;
+          const middleCol = col + dc / 2;
+
+          const target = getCell(toRow, toCol);
+          const middlePiece = getPiece(middleRow, middleCol);
+          if (
+            target &&
+            !target.firstChild &&
+            middlePiece &&
+            middlePiece.dataset.color !== playerColor
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function handleCellClick(e) {
+      const cell = e.currentTarget;
+      const row = +cell.dataset.row;
+      const col = +cell.dataset.col;
+
+      if (selected) {
+        const fromCell = selected.parentElement;
+        const fromRow = +fromCell.dataset.row;
+        const fromCol = +fromCell.dataset.col;
+
+        if (isValidMove(fromRow, fromCol, row, col, currentPlayer)) {
+          const captured = performMove(fromRow, fromCol, row, col);
+          selected.classList.remove("highlight");
+          selected = null;
+
+          if (captured && canCaptureAgain(row, col)) {
+            selected = getPiece(row, col);
+            selected.classList.add("highlight");
+          } else {
+            currentPlayer = currentPlayer === "black" ? "white" : "black";
+            if (currentPlayer === "white") setTimeout(robotMove, 500);
+          }
+        } else {
+          selected.classList.remove("highlight");
+          selected = null;
+        }
+      } else {
+        const piece = cell.firstChild;
+        if (piece && piece.dataset.color === currentPlayer) {
+          selected = piece;
+          selected.classList.add("highlight");
+        }
+      }
+    }
+
+    function canCaptureAgain(row, col) {
+      const piece = getPiece(row, col);
+      if (!piece) return false;
+      const playerColor = piece.dataset.color;
+      const dir = playerColor === "black" ? -1 : 1;
+
+      for (let dc of [-2, 2]) {
+        const toRow = row + 2 * dir;
+        const toCol = col + dc;
+        const middleRow = row + dir;
+        const middleCol = col + dc / 2;
+
+        const target = getCell(toRow, toCol);
+        const middlePiece = getPiece(middleRow, middleCol);
+        if (
+          target &&
+          !target.firstChild &&
+          middlePiece &&
+          middlePiece.dataset.color !== playerColor
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function performMove(fromRow, fromCol, toRow, toCol) {
+      const fromCell = getCell(fromRow, fromCol);
+      const toCell = getCell(toRow, toCol);
+      const piece = fromCell.firstChild;
+      toCell.appendChild(piece);
+
+      const rowDiff = toRow - fromRow;
+      if (Math.abs(rowDiff) === 2) {
+        const midRow = (fromRow + toRow) / 2;
+        const midCol = (fromCol + toCol) / 2;
+        const midCell = getCell(midRow, midCol);
+        if (midCell.firstChild) {
+          midCell.removeChild(midCell.firstChild);
+        }
+        return true;
+      }
+      return false;
+    }
+
+    function robotMove() {
+      const level = document.getElementById("difficulty").value;
+
+      const moves = [];
+      for (let piece of pieces) {
+        if (piece.dataset.color !== "white") continue;
+        const cell = piece.parentElement;
+        const fromRow = +cell.dataset.row;
+        const fromCol = +cell.dataset.col;
+        const dir = 1;
+
+        for (let dc of [-1, 1, -2, 2]) {
+          const toRow = fromRow + Math.abs(dc) === 2 ? 2 : 1;
+          const toCol = fromCol + dc;
+          const valid = isValidMove(fromRow, fromCol, fromRow + dir * (Math.abs(dc) === 2 ? 2 : 1), toCol, "white");
+          if (valid) {
+            moves.push({ fromRow, fromCol, toRow: fromRow + dir * (Math.abs(dc) === 2 ? 2 : 1), toCol });
+          }
+        }
+      }
+
+      if (moves.length > 0) {
+        const move = moves[Math.floor(Math.random() * moves.length)];
+        performMove(move.fromRow, move.fromCol, move.toRow, move.toCol);
+      }
+
+      currentPlayer = "black";
+    }
+
+    function addListeners() {
+      document.querySelectorAll(".cell").forEach((cell) => {
+        cell.addEventListener("click", handleCellClick);
+      });
+    }
+
+    createBoard();
+    addListeners();
+  </script>
+</body>
+</html>
